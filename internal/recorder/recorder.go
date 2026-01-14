@@ -86,7 +86,7 @@ func (r *Recorder) Record(filename string) error {
 
 	// Create command
 	cmd := exec.Command(shell)
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), "ASCIINEMA_REC=1")
 
 	// Start PTY
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
