@@ -12,6 +12,7 @@ import (
 // Writer writes asciicast v2 format
 type Writer struct {
 	file       *os.File
+	writer     *bufio.Writer
 	mu         sync.Mutex
 	timeOffset float64
 }
@@ -33,7 +34,7 @@ func NewWriter(filename string, header Header, append bool) (*Writer, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to open file for append: %w", err)
 			}
-			return &Writer{file: file, timeOffset: timeOffset}, nil
+			return &Writer{file: file, writer: bufio.NewWriter(file), timeOffset: timeOffset}, nil
 		}
 	}
 
@@ -42,6 +43,8 @@ func NewWriter(filename string, header Header, append bool) (*Writer, error) {
 		return nil, fmt.Errorf("failed to create file: %w", err)
 	}
 
+	writer := bufio.NewWriter(file)
+
 	// Write header
 	headerBytes, err := json.Marshal(header)
 	if err != nil {
@@ -49,16 +52,16 @@ func NewWriter(filename string, header Header, append bool) (*Writer, error) {
 		return nil, fmt.Errorf("failed to marshal header: %w", err)
 	}
 
-	if _, err := file.Write(headerBytes); err != nil {
+	if _, err := writer.Write(headerBytes); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to write header: %w", err)
 	}
-	if _, err := file.WriteString("\n"); err != nil {
+	if err := writer.WriteByte('\n'); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	return &Writer{file: file, timeOffset: timeOffset}, nil
+	return &Writer{file: file, writer: writer, timeOffset: timeOffset}, nil
 }
 
 // WriteEvent writes a single event
@@ -81,10 +84,10 @@ func (w *Writer) WriteEvent(event Event) error {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	if _, err := w.file.Write(eventBytes); err != nil {
+	if _, err := w.writer.Write(eventBytes); err != nil {
 		return fmt.Errorf("failed to write event: %w", err)
 	}
-	if _, err := w.file.WriteString("\n"); err != nil {
+	if err := w.writer.WriteByte('\n'); err != nil {
 		return fmt.Errorf("failed to write newline: %w", err)
 	}
 
@@ -111,8 +114,12 @@ func (w *Writer) WriteResize(timestamp float64, cols, rows int) error {
 	return w.WriteEvent(Event{Time: timestamp, Type: EventTypeResize, Data: fmt.Sprintf("%dx%d", cols, rows)})
 }
 
-// Close closes the writer
+// Close flushes the buffer and closes the writer
 func (w *Writer) Close() error {
+	if err := w.writer.Flush(); err != nil {
+		w.file.Close()
+		return fmt.Errorf("failed to flush buffer: %w", err)
+	}
 	return w.file.Close()
 }
 

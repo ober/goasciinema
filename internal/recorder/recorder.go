@@ -119,21 +119,39 @@ func (r *Recorder) Record(filename string) error {
 			}
 		}
 	}()
-	defer signal.Stop(sigCh)
+	defer func() {
+		signal.Stop(sigCh)
+		close(sigCh) // Close channel to unblock the goroutine
+	}()
 
 	r.startTime = time.Now()
 
-	// Copy stdin to pty
+	// Create a pipe to make stdin reading interruptible
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("failed to create pipe: %w", err)
+	}
+	defer stdinReader.Close()
+	defer stdinWriter.Close() // Close write side to unblock any pending reads
+
+	// Goroutine to copy from real stdin to the pipe
+	go func() {
+		io.Copy(stdinWriter, os.Stdin)
+	}()
+
+	// Copy from pipe to pty (interruptible by closing stdinReader)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := os.Stdin.Read(buf)
+			n, err := stdinReader.Read(buf)
 			if err != nil {
 				return
 			}
 			if n > 0 {
 				data := buf[:n]
-				ptmx.Write(data)
+				if _, err := ptmx.Write(data); err != nil {
+					return // PTY closed
+				}
 				if r.options.RecordStdin {
 					r.writeInput(string(data))
 				}
