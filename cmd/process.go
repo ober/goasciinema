@@ -35,7 +35,7 @@ Files are tracked by hash - unchanged files will be skipped unless --force is us
 func init() {
 	rootCmd.AddCommand(processCmd)
 	processCmd.Flags().BoolVarP(&processForce, "force", "f", false, "Force reprocessing of already processed files")
-	processCmd.Flags().StringVarP(&processDatabase, "database", "d", "asciinema_logs.db", "SQLite database file")
+	processCmd.Flags().StringVarP(&processDatabase, "database", "d", "", "SQLite database file (default: from ~/.goasciinema or ~/console-logs/asciinema_logs.db)")
 }
 
 func runProcess(cmd *cobra.Command, args []string) error {
@@ -44,8 +44,14 @@ func runProcess(cmd *cobra.Command, args []string) error {
 		path = args[0]
 	}
 
+	// Use config default if no database specified
+	dbPath := processDatabase
+	if dbPath == "" {
+		dbPath = GetDefaultDatabasePath()
+	}
+
 	// Open database
-	db, err := database.Open(processDatabase)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

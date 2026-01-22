@@ -29,14 +29,20 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	searchCmd.Flags().IntVarP(&searchContext, "context", "c", 5, "Number of context lines before/after match")
 	searchCmd.Flags().IntVarP(&searchLimit, "limit", "n", 50, "Maximum number of results")
-	searchCmd.Flags().StringVarP(&searchDatabase, "database", "d", "asciinema_logs.db", "SQLite database file")
+	searchCmd.Flags().StringVarP(&searchDatabase, "database", "d", "", "SQLite database file (default: from ~/.goasciinema or ~/console-logs/asciinema_logs.db)")
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
 	term := args[0]
 
+	// Use config default if no database specified
+	dbPath := searchDatabase
+	if dbPath == "" {
+		dbPath = GetDefaultDatabasePath()
+	}
+
 	// Open database
-	db, err := database.Open(searchDatabase)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

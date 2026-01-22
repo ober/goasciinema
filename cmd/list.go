@@ -18,12 +18,18 @@ var listCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(listCmd)
-	listCmd.Flags().StringVarP(&listDatabase, "database", "d", "asciinema_logs.db", "SQLite database file")
+	listCmd.Flags().StringVarP(&listDatabase, "database", "d", "", "SQLite database file (default: from ~/.goasciinema or ~/console-logs/asciinema_logs.db)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	// Use config default if no database specified
+	dbPath := listDatabase
+	if dbPath == "" {
+		dbPath = GetDefaultDatabasePath()
+	}
+
 	// Open database
-	db, err := database.Open(listDatabase)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

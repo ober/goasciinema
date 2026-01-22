@@ -18,12 +18,18 @@ var statsCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(statsCmd)
-	statsCmd.Flags().StringVarP(&statsDatabase, "database", "d", "asciinema_logs.db", "SQLite database file")
+	statsCmd.Flags().StringVarP(&statsDatabase, "database", "d", "", "SQLite database file (default: from ~/.goasciinema or ~/console-logs/asciinema_logs.db)")
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
+	// Use config default if no database specified
+	dbPath := statsDatabase
+	if dbPath == "" {
+		dbPath = GetDefaultDatabasePath()
+	}
+
 	// Open database
-	db, err := database.Open(statsDatabase)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -34,7 +40,7 @@ func runStats(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get stats: %w", err)
 	}
 
-	fmt.Printf("Database: %s\n", statsDatabase)
+	fmt.Printf("Database: %s\n", dbPath)
 	fmt.Printf("Processed files: %d\n", stats.ProcessedFiles)
 	fmt.Printf("Sessions: %d\n", stats.Sessions)
 	fmt.Printf("Total characters: %s\n", formatNumber(stats.TotalChars))
