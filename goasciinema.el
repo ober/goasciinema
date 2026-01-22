@@ -16,11 +16,16 @@
 ;; - Recording controls
 ;; - Playback integration
 ;;
+;; Configuration:
+;;   Database path is read from ~/.goasciinema config file:
+;;     database = ~/console-logs/asciinema_logs.db
+;;
 ;; Main commands:
 ;;   `goasciinema-search'       - Search terminal sessions
 ;;   `goasciinema-list'         - List all sessions
 ;;   `goasciinema-stats'        - Show database statistics
-;;   `goasciinema-process'      - Process recording files
+;;   `goasciinema-process'      - Process recordings (current dir)
+;;   `goasciinema-process-path' - Process recordings at specific path
 ;;   `goasciinema-record'       - Start a new recording
 ;;   `goasciinema-play'         - Play a recording
 
@@ -41,12 +46,8 @@
   :type 'string
   :group 'goasciinema)
 
-(defcustom goasciinema-database nil
-  "Path to the SQLite database file.
-If nil, uses the default from ~/.goasciinema config or ~/console-logs/asciinema_logs.db."
-  :type '(choice (const :tag "Use default" nil)
-                 (file :tag "Custom path"))
-  :group 'goasciinema)
+;; Database path is read from ~/.goasciinema config file by the Go tool.
+;; No need to configure it in Emacs.
 
 (defcustom goasciinema-search-context 5
   "Number of context lines to show before and after search matches."
@@ -132,11 +133,9 @@ If nil, no limit is applied."
 ;;; Utility functions
 
 (defun goasciinema--build-args (command &rest args)
-  "Build argument list for COMMAND with ARGS."
-  (let ((result (list command)))
-    (when goasciinema-database
-      (setq result (append result (list "-d" goasciinema-database))))
-    (append result (delq nil args))))
+  "Build argument list for COMMAND with ARGS.
+Database path is configured via ~/.goasciinema, not passed here."
+  (cons command (delq nil args)))
 
 (defun goasciinema--run-command (command &rest args)
   "Run goasciinema COMMAND with ARGS and return output as string."
@@ -161,7 +160,7 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
      :buffer buffer
      :command (cons goasciinema-executable
                     (apply #'goasciinema--build-args command args))
-     :sentinel (lambda (proc event)
+     :sentinel (lambda (proc _event)
                  (when (memq (process-status proc) '(exit signal))
                    (funcall callback (process-exit-status proc)))))))
 
@@ -301,31 +300,40 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
 
 ;;; Process files
 
-(defun goasciinema-process (path)
-  "Process asciinema recordings at PATH into the database."
-  (interactive "fPath to process: ")
-  (let* ((args (list path))
-         (args (if goasciinema-process-force (cons "-f" args) args)))
-    (goasciinema--run-command-async
-     "process"
-     "*goasciinema-process*"
-     (lambda (exit-code)
-       (if (zerop exit-code)
-           (message "Processing complete")
-         (message "Processing failed with exit code %d" exit-code)))
-     path)))
+(defun goasciinema-process ()
+  "Process asciinema recordings into the database.
+Uses the current directory.  Database path is configured via ~/.goasciinema."
+  (interactive)
+  (let ((args (if goasciinema-process-force '("-f") nil)))
+    (apply #'goasciinema--run-command-async
+           "process"
+           "*goasciinema-process*"
+           (lambda (exit-code)
+             (if (zerop exit-code)
+                 (message "Processing complete")
+               (message "Processing failed with exit code %d" exit-code)))
+           args)))
 
-(defun goasciinema-process-directory (dir)
-  "Process all recordings in directory DIR."
-  (interactive "DDirectory to process: ")
-  (goasciinema-process dir))
+(defun goasciinema-process-path (path)
+  "Process asciinema recordings at PATH into the database.
+Database path is configured via ~/.goasciinema."
+  (interactive "fPath to process: ")
+  (let ((args (if goasciinema-process-force (list "-f" path) (list path))))
+    (apply #'goasciinema--run-command-async
+           "process"
+           "*goasciinema-process*"
+           (lambda (exit-code)
+             (if (zerop exit-code)
+                 (message "Processing complete")
+               (message "Processing failed with exit code %d" exit-code)))
+           args)))
 
 ;;; Recording
 
 (defun goasciinema-record (filename)
   "Start recording a terminal session to FILENAME."
   (interactive "FOutput file: ")
-  (let* ((args (list filename))
+  (let* ((args (list "rec" filename))
          (args (if goasciinema-record-command
                    (append args (list "-c" goasciinema-record-command))
                  args))
@@ -336,11 +344,10 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
                    (append args (list "-i" (number-to-string goasciinema-record-idle-time-limit)))
                  args)))
     ;; Recording needs a real terminal, open in term
-    (let ((buffer (make-term "goasciinema-record"
-                             goasciinema-executable
-                             nil
-                             "rec"
-                             filename)))
+    (let ((buffer (apply #'make-term "goasciinema-record"
+                         goasciinema-executable
+                         nil
+                         args)))
       (switch-to-buffer buffer)
       (term-mode)
       (term-char-mode)
@@ -351,7 +358,7 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
 (defun goasciinema-play (filename)
   "Play back the recording at FILENAME."
   (interactive "fRecording file: ")
-  (let* ((args (list filename))
+  (let* ((args (list "play" filename))
          (args (if (not (= goasciinema-play-speed 1.0))
                    (append args (list "-s" (number-to-string goasciinema-play-speed)))
                  args))
@@ -362,7 +369,6 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
     (let ((buffer (apply #'make-term "goasciinema-play"
                          goasciinema-executable
                          nil
-                         "rec"
                          args)))
       (switch-to-buffer buffer)
       (term-mode)
@@ -420,8 +426,8 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
      ("p" "Play" goasciinema-play)
      ("c" "Cat (view output)" goasciinema-cat)]
     ["Database"
-     ("P" "Process files" goasciinema-process)
-     ("D" "Process directory" goasciinema-process-directory)]
+     ("P" "Process (current dir)" goasciinema-process)
+     ("D" "Process path..." goasciinema-process-path)]
     ["Online"
      ("a" "Authenticate" goasciinema-auth)
      ("u" "Upload" goasciinema-upload)]))
@@ -437,6 +443,7 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
     (define-key map (kbd "p") #'goasciinema-play)
     (define-key map (kbd "c") #'goasciinema-cat)
     (define-key map (kbd "P") #'goasciinema-process)
+    (define-key map (kbd "D") #'goasciinema-process-path)
     (define-key map (kbd "a") #'goasciinema-auth)
     (define-key map (kbd "u") #'goasciinema-upload)
     map)
