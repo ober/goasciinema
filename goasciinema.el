@@ -185,6 +185,22 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
         (erase-buffer)
         (insert output)
         (goto-char (point-min))
+        ;; Handle carriage returns in output
+        ;; First: normalize Windows line endings (\r\n -> \n)
+        (while (search-forward "\r\n" nil t)
+          (replace-match "\n" nil t))
+        (goto-char (point-min))
+        ;; Second: handle mid-line carriage returns (terminal overwrites)
+        ;; Keep only text after the last \r on each line
+        (while (re-search-forward "^.*\r" nil t)
+          (replace-match "" nil t))
+        (goto-char (point-min))
+        ;; Third: fix terminal soft line wraps
+        ;; Lines ending with 2+ spaces before newline followed by non-whitespace
+        ;; are likely terminal wraps that should be joined
+        (while (re-search-forward "  +\n\\([^ \t\n]\\)" nil t)
+          (replace-match " \\1" nil nil))
+        (goto-char (point-min))
         ;; Highlight matches
         (goasciinema--highlight-matches term)
         (org-mode)
