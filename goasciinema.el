@@ -196,10 +196,11 @@ Output goes to BUFFER-NAME, CALLBACK called on completion with exit code."
           (replace-match "" nil t))
         (goto-char (point-min))
         ;; Third: fix terminal soft line wraps
-        ;; Lines ending with 2+ spaces before newline followed by non-whitespace
-        ;; are likely terminal wraps that should be joined
-        (while (re-search-forward "  +\n\\([^ \t\n]\\)" nil t)
-          (replace-match " \\1" nil nil))
+        ;; Only join when an alphanumeric char is followed by padding spaces,
+        ;; newline, and alphanumeric or hyphen+alphanumeric (for CLI args like -search)
+        ;; This avoids merging lines ending with punctuation or followed by >>> etc
+        (while (re-search-forward "\\([[:alnum:]]\\)  +\n\\(-?[[:alnum:]]\\)" nil t)
+          (replace-match "\\1 \\2" nil nil))
         (goto-char (point-min))
         ;; Highlight matches
         (goasciinema--highlight-matches term)
