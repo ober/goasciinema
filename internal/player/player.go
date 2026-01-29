@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ober/goasciinema/internal/asciicast"
+	"github.com/ober/goasciinema/internal/sanitize"
 	ttypkg "github.com/ober/goasciinema/internal/tty"
 )
 
@@ -108,7 +110,8 @@ func (p *Player) playOnce(reader *asciicast.Reader) error {
 	}
 }
 
-// Cat outputs the full recording without timing
+// Cat outputs the full recording without timing, stripping ANSI escape
+// codes and terminal control characters.
 func Cat(filename string) error {
 	reader, err := asciicast.Open(filename)
 	if err != nil {
@@ -116,17 +119,24 @@ func Cat(filename string) error {
 	}
 	defer reader.Close()
 
+	var buf strings.Builder
 	for {
 		event, err := reader.ReadEvent()
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				break
 			}
 			return err
 		}
 
 		if event.Type == asciicast.EventTypeOutput {
-			os.Stdout.WriteString(event.Data)
+			buf.WriteString(event.Data)
 		}
 	}
+
+	cleaned := sanitize.CleanLines(buf.String())
+	if cleaned != "" {
+		os.Stdout.WriteString(cleaned + "\n")
+	}
+	return nil
 }
